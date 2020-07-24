@@ -1,6 +1,5 @@
 import re
-import urllib.request
-import urllib.error
+import requests
 import time
 
 '''
@@ -38,24 +37,31 @@ def convertTime(start, end):
     return text
 
 
+def openPage(url):
+    print('open page: ' + url)
+    start = time.time()
+
+    text = requests.get(url, timeout=120, headers={"Connection": "close"}).text
+
+    end = time.time()
+    print('open page: ' + url + ', done, 耗时: ' + convertTime(start, end))
+
+    return text
+
+
 def getFirstPages(url):
 
     start = time.time()
 
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0'}
-    request = urllib.request.Request(url, headers=headers)
-    response = urllib.request.urlopen(request)
-    html = response.read().decode('utf-8')
-    html = str(html)
-    print(html)
+    html = openPage(url)
 
     pattern = '<a class="btn btn2" href="//(.+?\.html)" title=".+?\n">([\u4E00-\u9FA5]+)</a>'
     pages = re.findall(pattern, html)
 
     end = time.time()
 
-    print(pages)
     print('从：' + url + '解析全部姓氏首页，耗时: ' + convertTime(start, end))
+    print("")
 
     return pages
 
@@ -63,11 +69,7 @@ def getFirstPages(url):
 def crawlEachPage(url, lastName):
     start = time.time()
 
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0'}
-    request = urllib.request.Request(url, headers=headers)
-    response = urllib.request.urlopen(request)
-    html = response.read().decode('utf-8')
-    html = str(html)
+    html = openPage(url)
 
     pattern = '<a class="biaobai" href="/biaobai\.rhtml\?name=([\u4E00-\u9FA5]+)" target="_blank">'
     names = re.findall(pattern, html)
@@ -81,7 +83,8 @@ def crawlEachPage(url, lastName):
 
     end = time.time()
 
-    print(url + '：' + lastName + '，耗时: ' + convertTime(start, end))
+    print('解析：' + url + '：' + lastName + '，耗时: ' + convertTime(start, end))
+    print("")
 
     return len(names)
 
@@ -91,17 +94,22 @@ def crawlLastName(url, lastName):
     nameFile.write("")
     nameFile.close()
 
+    error = False
+
     num = crawlEachPage(url, lastName)
     index = 1
 
-    while num > 0:
+    while num > 0 and not error:
         index += 1
         each_url = url.replace(".html", "_" + str(index) + '.html')
         try:
             num = crawlEachPage(each_url, lastName)
-        except urllib.error.URLError as e:
-            print(e.reason)
+        except Exception as e:
+            print(e)
+            print(lastName + ' error')
             num = 0
+            error = True
+    return error
 
 
 def crawlAllName(url):
@@ -109,15 +117,43 @@ def crawlAllName(url):
     if not lastNameFirstPages or len(lastNameFirstPages) == 0:
         return
 
+    doneNames = readDoneNames()
+    print("已完成：" + str(doneNames))
+    print("")
+
     for firstPage in lastNameFirstPages:
         url = 'http://' + firstPage[0]
         lastName = getLastName(firstPage[1])
-        crawlLastName(url, lastName)
+        if lastName not in doneNames:
+            start = time.time()
+
+            error = crawlLastName(url, lastName)
+
+            if not error:
+                nameFile = open('./names.txt', 'a+')
+                nameFile.write(lastName + "\n")
+                nameFile.close()
+
+            end = time.time()
+            print(lastName + '，耗时: ' + convertTime(start, end))
+            print('')
 
 
 def getLastName(text):
     index = text.find('姓')
-    return text[0:index + 1]
+    return text[0:index]
+
+
+def readDoneNames():
+    nameFile = open('./names.txt', 'r+')
+    data = nameFile.readlines()
+    nameFile.close()
+
+    names = []
+    for name in data:
+        names.append(name.replace('\n', ''))
+
+    return names
 
 
 link = 'http://www.resgain.net/xmdq.html'
